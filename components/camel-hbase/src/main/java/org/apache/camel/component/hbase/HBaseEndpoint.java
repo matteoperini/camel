@@ -32,6 +32,9 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTablePool;
 import org.apache.hadoop.hbase.filter.Filter;
+import java.security.PrivilegedAction;
+import org.apache.hadoop.hbase.client.HTableInterface;
+import org.apache.hadoop.security.UserGroupInformation;
 
 /**
  * Represents an HBase endpoint.
@@ -66,6 +69,12 @@ public class HBaseEndpoint extends DefaultEndpoint {
     private HBaseRow rowModel;
     @UriParam
     private int maxMessagesPerPoll;
+    @UriParam(description = "UserGroupInformation for HBase communication. If not specified, then Camel talks with HBase without Kerberos")
+    private UserGroupInformation userGroupInformation;
+    /**
+     * in the purpose of performance optimization
+     */
+    private byte[] tableNameBytes;    
 
     public HBaseEndpoint(String uri, HBaseComponent component, HTablePool tablePool, String tableName) {
         super(uri, component);
@@ -73,15 +82,17 @@ public class HBaseEndpoint extends DefaultEndpoint {
         this.tablePool = tablePool;
         if (this.tableName == null) {
             throw new IllegalArgumentException("Table name can not be null");
+        }else {
+        	 tableNameBytes = tableName.getBytes();
         }
     }
 
     public Producer createProducer() throws Exception {
-        return new HBaseProducer(this, tablePool, tableName);
+    	return new HBaseProducer(this);
     }
 
     public Consumer createConsumer(Processor processor) throws Exception {
-        HBaseConsumer consumer =  new HBaseConsumer(this, processor, tablePool, tableName);
+    	HBaseConsumer consumer = new HBaseConsumer(this, processor);
         configureConsumer(consumer);
         consumer.setMaxMessagesPerPoll(maxMessagesPerPoll);
         return consumer;
@@ -186,4 +197,31 @@ public class HBaseEndpoint extends DefaultEndpoint {
     public void setMaxMessagesPerPoll(int maxMessagesPerPoll) {
         this.maxMessagesPerPoll = maxMessagesPerPoll;
     }
+    
+    /**
+     * Defines privileges to communicate with HBase table by {@link #getTable()}
+     * @param userGroupInformation
+     */
+    public void setUserGroupInformation(UserGroupInformation userGroupInformation) {
+        this.userGroupInformation = userGroupInformation;
+    }
+    /**
+     * Gets connection to the table (secured or not, depends on the object initialization)
+     * please remember to close the table after use
+     * @return table, remember to close!
+     */
+    public HTableInterface getTable() {
+        if (userGroupInformation != null) {
+            return userGroupInformation.doAs(new PrivilegedAction<HTableInterface>() {
+                @Override
+                public HTableInterface run() {
+                    return tablePool.getTable(tableNameBytes);
+                }
+            });
+        } else {
+            return tablePool.getTable(tableNameBytes);
+        }
+    }
+    
+    
 }

@@ -33,7 +33,6 @@ import org.apache.camel.util.CastUtils;
 import org.apache.camel.util.ObjectHelper;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.HTableInterface;
-import org.apache.hadoop.hbase.client.HTablePool;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
@@ -48,160 +47,165 @@ import org.slf4j.LoggerFactory;
  */
 public class HBaseConsumer extends ScheduledBatchPollingConsumer {
 
-    private static final Logger LOG = LoggerFactory.getLogger(HBaseConsumer.class);
+	private static final Logger LOG = LoggerFactory.getLogger(HBaseConsumer.class);
 
-    private String tableName;
-    private final HBaseEndpoint endpoint;
-    private HTablePool tablePool;
-    private HBaseRow rowModel;
+	private final HBaseEndpoint endpoint;
+	private HBaseRow rowModel;
 
-    public HBaseConsumer(HBaseEndpoint endpoint, Processor processor, HTablePool tablePool, String tableName) {
-        super(endpoint, processor);
-        this.endpoint = endpoint;
-        this.tableName = tableName;
-        this.tablePool = tablePool;
-        this.rowModel = endpoint.getRowModel();
-    }
+	public HBaseConsumer(HBaseEndpoint endpoint, Processor processor) {
+		super(endpoint, processor);
+		this.endpoint = endpoint;
+		this.rowModel = endpoint.getRowModel();
+	}
 
-    @Override
-    protected int poll() throws Exception {
-        HTableInterface table = tablePool.getTable(tableName);
-        try {
-            shutdownRunningTask = null;
-            pendingExchanges = 0;
+	@Override
+	protected int poll() throws Exception {
+		HTableInterface table = endpoint.getTable();
+		try {
+			shutdownRunningTask = null;
+			pendingExchanges = 0;
 
-            Queue<Exchange> queue = new LinkedList<Exchange>();
+			Queue<Exchange> queue = new LinkedList<Exchange>();
 
-            Scan scan = new Scan();
-            List<Filter> filters = new LinkedList<Filter>();
-            if (endpoint.getFilters() != null) {
-                filters.addAll(endpoint.getFilters());
-            }
+			Scan scan = new Scan();
+			List<Filter> filters = new LinkedList<Filter>();
+			if (endpoint.getFilters() != null) {
+				filters.addAll(endpoint.getFilters());
+			}
 
-            if (maxMessagesPerPoll > 0) {
-                filters.add(new PageFilter(maxMessagesPerPoll));
-            }
-            Filter compoundFilter = new FilterList(filters);
-            scan.setFilter(compoundFilter);
+			if (maxMessagesPerPoll > 0) {
+				filters.add(new PageFilter(maxMessagesPerPoll));
+			}
+			Filter compoundFilter = new FilterList(filters);
+			scan.setFilter(compoundFilter);
 
-            if (rowModel != null && rowModel.getCells() != null) {
-                Set<HBaseCell> cellModels = rowModel.getCells();
-                for (HBaseCell cellModel : cellModels) {
-                    scan.addColumn(HBaseHelper.getHBaseFieldAsBytes(cellModel.getFamily()), HBaseHelper.getHBaseFieldAsBytes(cellModel.getQualifier()));
-                }
-            }
+			if (rowModel != null && rowModel.getCells() != null) {
+				Set<HBaseCell> cellModels = rowModel.getCells();
+				for (HBaseCell cellModel : cellModels) {
+					scan.addColumn(HBaseHelper.getHBaseFieldAsBytes(cellModel.getFamily()),
+							HBaseHelper.getHBaseFieldAsBytes(cellModel.getQualifier()));
+				}
+			}
 
-            ResultScanner scanner = table.getScanner(scan);
-            int exchangeCount = 0;
-            // The next three statements are used just to get a reference to the BodyCellMappingStrategy instance.
-            Exchange exchange = endpoint.createExchange();
-            exchange.getIn().setHeader(CellMappingStrategyFactory.STRATEGY, CellMappingStrategyFactory.BODY);
-            CellMappingStrategy mappingStrategy = endpoint.getCellMappingStrategyFactory().getStrategy(exchange.getIn());
-            for (Result result = scanner.next(); (exchangeCount < maxMessagesPerPoll || maxMessagesPerPoll <= 0) && result != null; result = scanner.next()) {
-                HBaseData data = new HBaseData();
-                HBaseRow resultRow = new HBaseRow();
-                resultRow.apply(rowModel);
-                byte[] row = result.getRow();
-                resultRow.setId(endpoint.getCamelContext().getTypeConverter().convertTo(rowModel.getRowType(), row));
+			ResultScanner scanner = table.getScanner(scan);
+			int exchangeCount = 0;
+			// The next three statements are used just to get a reference to the
+			// BodyCellMappingStrategy instance.
+			Exchange exchange = endpoint.createExchange();
+			exchange.getIn().setHeader(CellMappingStrategyFactory.STRATEGY, CellMappingStrategyFactory.BODY);
+			CellMappingStrategy mappingStrategy = endpoint.getCellMappingStrategyFactory()
+					.getStrategy(exchange.getIn());
+			for (Result result = scanner.next(); (exchangeCount < maxMessagesPerPoll || maxMessagesPerPoll <= 0)
+					&& result != null; result = scanner.next()) {
+				HBaseData data = new HBaseData();
+				HBaseRow resultRow = new HBaseRow();
+				resultRow.apply(rowModel);
+				byte[] row = result.getRow();
+				resultRow.setId(endpoint.getCamelContext().getTypeConverter().convertTo(rowModel.getRowType(), row));
 
-                List<KeyValue> keyValues = result.list();
-                if (keyValues != null) {
-                    Set<HBaseCell> cellModels = rowModel.getCells();
-                    if (cellModels.size() > 0) {
-                        for (HBaseCell modelCell : cellModels) {
-                            HBaseCell resultCell = new HBaseCell();
-                            String family = modelCell.getFamily();
-                            String column = modelCell.getQualifier();
-                            resultCell.setValue(endpoint.getCamelContext().getTypeConverter().convertTo(modelCell.getValueType(),
-                                    result.getValue(HBaseHelper.getHBaseFieldAsBytes(family), HBaseHelper.getHBaseFieldAsBytes(column))));
-                            resultCell.setFamily(modelCell.getFamily());
-                            resultCell.setQualifier(modelCell.getQualifier());
-                            resultRow.getCells().add(resultCell);
-                        }
-                    } else {
-                        // just need to put every key value into the result Cells
-                        for (KeyValue keyValue : keyValues) {
-                            String qualifier = new String(keyValue.getQualifier());
-                            String family = new String(keyValue.getFamily());
-                            HBaseCell resultCell = new HBaseCell();
-                            resultCell.setFamily(family);
-                            resultCell.setQualifier(qualifier);
-                            resultCell.setValue(endpoint.getCamelContext().getTypeConverter().convertTo(String.class, keyValue.getValue()));
-                            resultRow.getCells().add(resultCell); 
-                        }
-                    }
-               
-                    data.getRows().add(resultRow);
-                    exchange = endpoint.createExchange();
-                    // Probably overkill but kept it here for consistency.
-                    exchange.getIn().setHeader(CellMappingStrategyFactory.STRATEGY, CellMappingStrategyFactory.BODY);
-                    mappingStrategy.applyScanResults(exchange.getIn(), data);
-                    //Make sure that there is a header containing the marked row ids, so that they can be deleted.
-                    exchange.getIn().setHeader(HbaseAttribute.HBASE_MARKED_ROW_ID.asHeader(), result.getRow());
-                    queue.add(exchange);
-                    exchangeCount++;
-                }
-            }
-            scanner.close();
-            return queue.isEmpty() ? 0 : processBatch(CastUtils.cast(queue));
-        } finally {
-            table.close();
-        }
-    }
+				List<KeyValue> keyValues = result.list();
+				if (keyValues != null) {
+					Set<HBaseCell> cellModels = rowModel.getCells();
+					if (cellModels.size() > 0) {
+						for (HBaseCell modelCell : cellModels) {
+							HBaseCell resultCell = new HBaseCell();
+							String family = modelCell.getFamily();
+							String column = modelCell.getQualifier();
+							resultCell.setValue(endpoint.getCamelContext().getTypeConverter().convertTo(
+									modelCell.getValueType(), result.getValue(HBaseHelper.getHBaseFieldAsBytes(family),
+											HBaseHelper.getHBaseFieldAsBytes(column))));
+							resultCell.setFamily(modelCell.getFamily());
+							resultCell.setQualifier(modelCell.getQualifier());
+							resultRow.getCells().add(resultCell);
+						}
+					} else {
+						// just need to put every key value into the result
+						// Cells
+						for (KeyValue keyValue : keyValues) {
+							String qualifier = new String(keyValue.getQualifier());
+							String family = new String(keyValue.getFamily());
+							HBaseCell resultCell = new HBaseCell();
+							resultCell.setFamily(family);
+							resultCell.setQualifier(qualifier);
+							resultCell.setValue(endpoint.getCamelContext().getTypeConverter().convertTo(String.class,
+									keyValue.getValue()));
+							resultRow.getCells().add(resultCell);
+						}
+					}
 
-    @Override
-    public int processBatch(Queue<Object> exchanges) throws Exception {
-        int total = exchanges.size();
+					data.getRows().add(resultRow);
+					exchange = endpoint.createExchange();
+					// Probably overkill but kept it here for consistency.
+					exchange.getIn().setHeader(CellMappingStrategyFactory.STRATEGY, CellMappingStrategyFactory.BODY);
+					mappingStrategy.applyScanResults(exchange.getIn(), data);
+					// Make sure that there is a header containing the marked
+					// row ids, so that they can be deleted.
+					exchange.getIn().setHeader(HbaseAttribute.HBASE_MARKED_ROW_ID.asHeader(), result.getRow());
+					queue.add(exchange);
+					exchangeCount++;
+				}
+			}
+			scanner.close();
+			return queue.isEmpty() ? 0 : processBatch(CastUtils.cast(queue));
+		} finally {
+			table.close();
+		}
+	}
 
-        // limit if needed
-        if (maxMessagesPerPoll > 0 && total > maxMessagesPerPoll) {
-            LOG.debug("Limiting to maximum messages to poll {} as there was {} messages in this poll.", maxMessagesPerPoll, total);
-            total = maxMessagesPerPoll;
-        }
+	@Override
+	public int processBatch(Queue<Object> exchanges) throws Exception {
+		int total = exchanges.size();
 
-        for (int index = 0; index < total && isBatchAllowed(); index++) {
-            // only loop if we are started (allowed to run)
-            Exchange exchange = ObjectHelper.cast(Exchange.class, exchanges.poll());
-            // add current index and total as properties
-            exchange.setProperty(Exchange.BATCH_INDEX, index);
-            exchange.setProperty(Exchange.BATCH_SIZE, total);
-            exchange.setProperty(Exchange.BATCH_COMPLETE, index == total - 1);
+		// limit if needed
+		if (maxMessagesPerPoll > 0 && total > maxMessagesPerPoll) {
+			LOG.debug("Limiting to maximum messages to poll {} as there was {} messages in this poll.",
+					maxMessagesPerPoll, total);
+			total = maxMessagesPerPoll;
+		}
 
-            // update pending number of exchanges
-            pendingExchanges = total - index - 1;
+		for (int index = 0; index < total && isBatchAllowed(); index++) {
+			// only loop if we are started (allowed to run)
+			Exchange exchange = ObjectHelper.cast(Exchange.class, exchanges.poll());
+			// add current index and total as properties
+			exchange.setProperty(Exchange.BATCH_INDEX, index);
+			exchange.setProperty(Exchange.BATCH_SIZE, total);
+			exchange.setProperty(Exchange.BATCH_COMPLETE, index == total - 1);
 
-            LOG.trace("Processing exchange [{}]...", exchange);
-            getProcessor().process(exchange);
-            if (exchange.getException() != null) {
-                // if we failed then throw exception
-                throw exchange.getException();
-            }
+			// update pending number of exchanges
+			pendingExchanges = total - index - 1;
 
-            if (endpoint.isRemove()) {
-                remove((byte[]) exchange.getIn().getHeader(HbaseAttribute.HBASE_MARKED_ROW_ID.asHeader()));
-            }
-        }
+			LOG.trace("Processing exchange [{}]...", exchange);
+			getProcessor().process(exchange);
+			if (exchange.getException() != null) {
+				// if we failed then throw exception
+				throw exchange.getException();
+			}
 
-        return total;
-    }
+			if (endpoint.isRemove()) {
+				remove((byte[]) exchange.getIn().getHeader(HbaseAttribute.HBASE_MARKED_ROW_ID.asHeader()));
+			}
+		}
 
-    /**
-     * Delegates to the {@link HBaseRemoveHandler}.
-     */
-    private void remove(byte[] row) throws IOException {
-        HTableInterface table = tablePool.getTable(tableName);
-        try {
-            endpoint.getRemoveHandler().remove(table, row);
-        } finally {
-            table.close();
-        }
-    }
+		return total;
+	}
 
-    public HBaseRow getRowModel() {
-        return rowModel;
-    }
+	/**
+	 * Delegates to the {@link HBaseRemoveHandler}.
+	 */
+	private void remove(byte[] row) throws IOException {
+		HTableInterface table = endpoint.getTable();
+		try {
+			endpoint.getRemoveHandler().remove(table, row);
+		} finally {
+			table.close();
+		}
+	}
 
-    public void setRowModel(HBaseRow rowModel) {
-        this.rowModel = rowModel;
-    }
+	public HBaseRow getRowModel() {
+		return rowModel;
+	}
+
+	public void setRowModel(HBaseRow rowModel) {
+		this.rowModel = rowModel;
+	}
 }
