@@ -21,7 +21,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 import java.util.Set;
-
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
 import org.apache.camel.component.hbase.mapping.CellMappingStrategy;
@@ -77,11 +76,8 @@ public class HBaseConsumer extends ScheduledBatchPollingConsumer {
             if (maxMessagesPerPoll > 0) {
                 filters.add(new PageFilter(maxMessagesPerPoll));
             }
-
-            if (!filters.isEmpty()){
-              Filter compoundFilter = new FilterList(filters);
-              scan.setFilter(compoundFilter);
-            }
+            Filter compoundFilter = new FilterList(filters);
+            scan.setFilter(compoundFilter);
 
             if (rowModel != null && rowModel.getCells() != null) {
                 Set<HBaseCell> cellModels = rowModel.getCells();

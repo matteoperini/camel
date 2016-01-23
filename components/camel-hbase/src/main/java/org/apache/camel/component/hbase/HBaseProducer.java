@@ -124,8 +124,8 @@ public class HBaseProducer extends DefaultProducer implements ServicePoolAware {
 
             ObjectHelper.notNull(family, "HBase column family", cell);
             ObjectHelper.notNull(column, "HBase column", cell);
-            put.add(HBaseHelper.getHBaseFieldAsBytes(family), HBaseHelper.getHBaseFieldAsBytes(column),
-                    endpoint.getCamelContext().getTypeConverter().convertTo(byte[].class, value));
+            put.add(HBaseHelper.getHBaseFieldAsBytes(family), HBaseHelper.getHBaseFieldAsBytes(column), 
+            		endpoint.getCamelContext().getTypeConverter().convertTo(byte[].class, value));
         }
         return put;
     }
@@ -192,8 +192,8 @@ public class HBaseProducer extends DefaultProducer implements ServicePoolAware {
      * Performs an HBase {@link Get} on a specific row, using a collection of values (family/column/value pairs).
      * The result is <p>the most recent entry</p> for each column.
      */
-    private List<HBaseRow> scanCells(HTableInterface table, HBaseRow model, String start, Integer maxRowScan, List<Filter> filters)
-            throws Exception {
+    private List<HBaseRow> scanCells(HTableInterface table, HBaseRow model, String start, Integer maxRowScan, List<Filter> filters) 
+    		throws Exception {
         List<HBaseRow> rowSet = new LinkedList<HBaseRow>();
 
         HBaseRow startRow = new HBaseRow(model.getCells());
@@ -214,7 +214,7 @@ public class HBaseProducer extends DefaultProducer implements ServicePoolAware {
                     Object clone = endpoint.getCamelContext().getInjector().newInstance(filter.getClass());
                     if (clone instanceof ModelAwareFilter) {
                         ((ModelAwareFilter<?>) clone).apply(endpoint.getCamelContext(), model);
-                        clonedFilters.add((Filter) clone);
+                        clonedFilters.add((ModelAwareFilter<?>) clone);
                     }
                 }
             }
@@ -253,8 +253,8 @@ public class HBaseProducer extends DefaultProducer implements ServicePoolAware {
 
                 if (result.getColumnLatest(HBaseHelper.getHBaseFieldAsBytes(family), HBaseHelper.getHBaseFieldAsBytes(column)) != null) {
                     resultCell.setTimestamp(
-                            result.getColumnLatest(HBaseHelper.getHBaseFieldAsBytes(family), HBaseHelper.getHBaseFieldAsBytes(column))
-                                    .getTimestamp());
+                    		result.getColumnLatest(HBaseHelper.getHBaseFieldAsBytes(family), HBaseHelper.getHBaseFieldAsBytes(column))
+                    		        .getTimestamp());
                 }
                 resultRow.getCells().add(resultCell);
             }
@@ -277,8 +277,8 @@ public class HBaseProducer extends DefaultProducer implements ServicePoolAware {
                 exchange.getIn().setHeader(CellMappingStrategyFactory.STRATEGY, endpoint.getMappingStrategyName());
             }
 
-            if (endpoint.getMappingStrategyName() != null
-                    && exchange.getIn().getHeader(CellMappingStrategyFactory.STRATEGY_CLASS_NAME) == null) {
+            if (endpoint.getMappingStrategyName() != null && 
+            		exchange.getIn().getHeader(CellMappingStrategyFactory.STRATEGY_CLASS_NAME) == null) {
                 exchange.getIn().setHeader(CellMappingStrategyFactory.STRATEGY_CLASS_NAME, endpoint.getMappingStrategyClassName());
             }
 

@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 package org.apache.camel.component.hbase;
-
 import java.security.PrivilegedAction;
 import java.util.List;
 
@@ -46,44 +45,44 @@ public class HBaseEndpoint extends DefaultEndpoint {
     private final HTablePool tablePool;
     private HBaseAdmin admin;
 
-    @UriPath(description = "The name of the table") @Metadata(required = "true")
+    @UriPath @Metadata(required = "true")
     private final String tableName;
-    @UriParam(label = "producer", defaultValue = "100")
+    //Operation properties.
+    @UriParam(defaultValue = "100")
     private int maxResults = 100;
     @UriParam
     private List<Filter> filters;
-    @UriParam(label = "consumer", enums = "CamelHBasePut,CamelHBaseGet,CamelHBaseScan,CamelHBaseDelete")
+    @UriParam
     private String operation;
-    @UriParam(label = "consumer", defaultValue = "true")
+    @UriParam(defaultValue = "true")
     private boolean remove = true;
-    @UriParam(enums = "header,body")
+    @UriParam
     private String mappingStrategyName;
     @UriParam
     private String mappingStrategyClassName;
     @UriParam
     private CellMappingStrategyFactory cellMappingStrategyFactory = new CellMappingStrategyFactory();
-    @UriParam(label = "consumer")
+    @UriParam
     private HBaseRemoveHandler removeHandler = new HBaseDeleteHandler();
     @UriParam
     private HBaseRow rowModel;
-    @UriParam(label = "consumer")
+    @UriParam
     private int maxMessagesPerPoll;
-    @UriParam(description = "UserGroupInformation for HBase communication. If not specified, then Camel talks with HBase without Kerberos")
+   	@UriParam
     private UserGroupInformation userGroupInformation;
-
     /**
-     * in the purpose of performance optimization
-     */
-    private byte[] tableNameBytes;
-
+   	 * in the purpose of performance optimization
+   	 */
+   	private byte[] tableNameBytes;
+    
     public HBaseEndpoint(String uri, HBaseComponent component, HTablePool tablePool, String tableName) {
         super(uri, component);
         this.tableName = tableName;
         this.tablePool = tablePool;
         if (this.tableName == null) {
             throw new IllegalArgumentException("Table name can not be null");
-        } else {
-            tableNameBytes = tableName.getBytes();
+        }else{
+        	 tableNameBytes = tableName.getBytes();
         }
     }
 
@@ -92,7 +91,7 @@ public class HBaseEndpoint extends DefaultEndpoint {
     }
 
     public Consumer createConsumer(Processor processor) throws Exception {
-        HBaseConsumer consumer = new HBaseConsumer(this, processor);
+        HBaseConsumer consumer =  new HBaseConsumer(this, processor);
         configureConsumer(consumer);
         consumer.setMaxMessagesPerPoll(maxMessagesPerPoll);
         return consumer;
@@ -122,9 +121,6 @@ public class HBaseEndpoint extends DefaultEndpoint {
         return maxResults;
     }
 
-    /**
-     * The maximum number of rows to scan.
-     */
     public void setMaxResults(int maxResults) {
         this.maxResults = maxResults;
     }
@@ -133,9 +129,6 @@ public class HBaseEndpoint extends DefaultEndpoint {
         return filters;
     }
 
-    /**
-     * A list of filters to use.
-     */
     public void setFilters(List<Filter> filters) {
         this.filters = filters;
     }
@@ -144,9 +137,6 @@ public class HBaseEndpoint extends DefaultEndpoint {
         return operation;
     }
 
-    /**
-     * The HBase operation to perform
-     */
     public void setOperation(String operation) {
         this.operation = operation;
     }
@@ -155,9 +145,6 @@ public class HBaseEndpoint extends DefaultEndpoint {
         return cellMappingStrategyFactory;
     }
 
-    /**
-     * To use a custom CellMappingStrategyFactory that is responsible for mapping cells.
-     */
     public void setCellMappingStrategyFactory(CellMappingStrategyFactory cellMappingStrategyFactory) {
         this.cellMappingStrategyFactory = cellMappingStrategyFactory;
     }
@@ -166,9 +153,6 @@ public class HBaseEndpoint extends DefaultEndpoint {
         return mappingStrategyName;
     }
 
-    /**
-     * The strategy to use for mapping Camel messages to HBase columns. Supported values: header, or body.
-     */
     public void setMappingStrategyName(String mappingStrategyName) {
         this.mappingStrategyName = mappingStrategyName;
     }
@@ -177,9 +161,6 @@ public class HBaseEndpoint extends DefaultEndpoint {
         return mappingStrategyClassName;
     }
 
-    /**
-     * The class name of a custom mapping strategy implementation.
-     */
     public void setMappingStrategyClassName(String mappingStrategyClassName) {
         this.mappingStrategyClassName = mappingStrategyClassName;
     }
@@ -188,9 +169,6 @@ public class HBaseEndpoint extends DefaultEndpoint {
         return rowModel;
     }
 
-    /**
-     * An instance of org.apache.camel.component.hbase.model.HBaseRow which describes how each row should be modeled
-     */
     public void setRowModel(HBaseRow rowModel) {
         this.rowModel = rowModel;
     }
@@ -199,9 +177,6 @@ public class HBaseEndpoint extends DefaultEndpoint {
         return remove;
     }
 
-    /**
-     * If the option is true, Camel HBase Consumer will remove the rows which it processes.
-     */
     public void setRemove(boolean remove) {
         this.remove = remove;
     }
@@ -210,9 +185,6 @@ public class HBaseEndpoint extends DefaultEndpoint {
         return removeHandler;
     }
 
-    /**
-     * To use a custom HBaseRemoveHandler that is executed when a row is to be removed.
-     */
     public void setRemoveHandler(HBaseRemoveHandler removeHandler) {
         this.removeHandler = removeHandler;
     }
@@ -221,38 +193,37 @@ public class HBaseEndpoint extends DefaultEndpoint {
         return maxMessagesPerPoll;
     }
 
-    /**
-     * Gets the maximum number of messages as a limit to poll at each polling.
-     * <p/>
-     * Is default unlimited, but use 0 or negative number to disable it as unlimited.
-     */
     public void setMaxMessagesPerPoll(int maxMessagesPerPoll) {
         this.maxMessagesPerPoll = maxMessagesPerPoll;
     }
-
+    
+    public UserGroupInformation getUserGroupInformation() {
+        return userGroupInformation;
+    }
+    
     /**
-     * Defines privileges to communicate with HBase table by {@link #getTable()}
-     * @param userGroupInformation
-     */
+    * Defines privileges to communicate with HBase such as using kerberos
+    */
     public void setUserGroupInformation(UserGroupInformation userGroupInformation) {
         this.userGroupInformation = userGroupInformation;
     }
-
+    
     /**
-     * Gets connection to the table (secured or not, depends on the object initialization)
-     * please remember to close the table after use
-     * @return table, remember to close!
-     */
-    public HTableInterface getTable() {
-        if (userGroupInformation != null) {
-            return userGroupInformation.doAs(new PrivilegedAction<HTableInterface>() {
-                @Override
-                public HTableInterface run() {
-                    return tablePool.getTable(tableNameBytes);
-                }
-            });
-        } else {
-            return tablePool.getTable(tableNameBytes);
-        }
+    * Gets connection to the table (secured or not, depends on the object initialization)
+    * please remember to close the table after use
+    * @return table, remember to close!
+   	*/
+   	public HTableInterface getTable(){
+   		if (userGroupInformation!=null){
+   			return userGroupInformation.doAs(new PrivilegedAction<HTableInterface>() {
+    			@Override
+    			public HTableInterface run() {
+    				return tablePool.getTable(tableNameBytes);
+    			}
+    		});
+    	}else{
+    		return tablePool.getTable(tableNameBytes);
+    	}
     }
+
 }
