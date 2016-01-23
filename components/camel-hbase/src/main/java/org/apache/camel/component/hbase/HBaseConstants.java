@@ -28,4 +28,5 @@ public interface HBaseConstants {
     String HBASE_MAX_SCAN_RESULTS = "CamelHBaseMaxScanResults";
     
     String FROM_ROW = "CamelHBaseStartRow";
+    String TO_ROW = "CamelHBaseStopRow";
 }
